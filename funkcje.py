@@ -4,6 +4,7 @@ def usuwanie_najbardziej_scorrelowanych(df, prog, numeryczne_kolumny=None, bezpi
     """
     Wylicza korelacje między kolumnami w zbiorze danych i usuwa te, które mają korelację większą niż podany próg. 
     Jeżeli nie chcemy usnąć niektórych kolumn, możemy je podać w liście bezpieczne_kolumny.
+    Usuwamy kolumny o mniejszej różności (mniejsza liczba unikalnych wartości).
     Funkcja zwraca DataFrame z usuniętymi kolumnami.
 
     Parametry:
@@ -56,8 +57,15 @@ def usuwanie_najbardziej_scorrelowanych(df, prog, numeryczne_kolumny=None, bezpi
                     elif c2_bezpieczna:
                         do_usuniecia.add(c_1)
                     else:
-                        do_usuniecia.add(c_1)
+                        if df[c_1].nunique() > df[c_2].nunique():
+                            do_usuniecia.add(c_2)
+                        else:
+                            do_usuniecia.add(c_1)
                 else:
-                    do_usuniecia.add(c_1)
+                    if df[c_1].nunique() > df[c_2].nunique():
+                        do_usuniecia.add(c_2)
+                    else:
+                        do_usuniecia.add(c_1)
 
+    print(f"Usunięto {len(do_usuniecia)} kolumn.")
     return df.drop(columns=list(do_usuniecia))

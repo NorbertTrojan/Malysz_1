@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
 from sklearn.model_selection import StratifiedKFold
+from IPython.display import display
 
 def dodaj_cechy_zawiasowe(
     df: pd.DataFrame,
@@ -159,9 +160,10 @@ def dodaj_cechy_zawiasowe(
 
     wynik = wynik.drop(columns=kolumny_niemonotoniczne)
 
+
     return wynik, wyznaczone_progi
 
-def usuwanie_najbardziej_scorrelowanych(df, prog, numeryczne_kolumny=None, bezpieczne_kolumny=None):
+def usuwanie_najbardziej_scorrelowanych(df, prog, numeryczne_kolumny=None, bezpieczne_kolumny=None, czy_wyswietlic=False):
     """
     Wylicza korelacje między kolumnami w zbiorze danych i usuwa te, które mają korelację większą niż podany próg. 
     Jeżeli nie chcemy usnąć niektórych kolumn, możemy je podać w liście bezpieczne_kolumny.
@@ -228,7 +230,8 @@ def usuwanie_najbardziej_scorrelowanych(df, prog, numeryczne_kolumny=None, bezpi
                     else:
                         do_usuniecia.add(c_1)
 
-    print(f"Usunięto {len(do_usuniecia)} kolumn.")
+    if czy_wyswietlic:
+        print(f"Usunięto {len(do_usuniecia)} kolumn.")
     return df.drop(columns=list(do_usuniecia))
 
 def wykryj_niemonotoniczne(
@@ -240,7 +243,8 @@ def wykryj_niemonotoniczne(
     min_zmian_kierunku=1,
     min_zmian_w_gore=0,
     min_zmian_w_dol=0,
-    min_rozstep_dr=0.03
+    min_rozstep_dr=0.03,
+    czy_wyswietlic=False
 ):
 
     """
@@ -387,7 +391,8 @@ def wykryj_niemonotoniczne(
     wyniki = pd.DataFrame(wyniki)
 
     if wyniki.empty:
-        print("Nie znaleziono cech spełniających warunki analizy.")
+        if czy_wyswietlic:
+            print("Nie znaleziono cech spełniających warunki analizy.")
         return []
 
     wyniki_niemonotoniczne = wyniki[
@@ -396,10 +401,10 @@ def wykryj_niemonotoniczne(
         ["zmiany_kierunku", "rozstep_DR"],
         ascending=False
     )
+    if czy_wyswietlic:
+        print(f"Liczba przeanalizowanych cech: {len(wyniki)}")
+        print(f"Liczba cech niemonotonicznych: {len(wyniki_niemonotoniczne)}")
 
-    print(f"Liczba przeanalizowanych cech: {len(wyniki)}")
-    print(f"Liczba cech niemonotonicznych: {len(wyniki_niemonotoniczne)}")
-
-    display(wyniki_niemonotoniczne.round(4))
+        display(wyniki_niemonotoniczne.round(4))
 
     return wyniki_niemonotoniczne["cecha"].tolist()

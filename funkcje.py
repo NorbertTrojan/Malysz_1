@@ -2,81 +2,165 @@ import pandas as pd
 import numpy as np
 
 
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import log_loss
+from sklearn.model_selection import StratifiedKFold
+
 def dodaj_cechy_zawiasowe(
     df: pd.DataFrame,
-    y: pd.Series,
-    kolumny_niemonotoniczne: list[str],
-    dolny_kwantyl: float = 0.1,
-    gorny_kwantyl: float = 0.9,
+    y: pd.Series | None = None,
+    kolumny_niemonotoniczne: list[str] | None = None,
     progi: dict[str, dict[str, float]] | None = None,
+    liczba_kandydatow: int = 15,
+    cv: int = 5
+    
 ) -> tuple[pd.DataFrame, dict[str, dict[str, float]]]:
-    """Dodaje cechy zawiasowe opisujące skrajne wartości wskazanych kolumn.
+    """Dodaje cechy zawiasowe, zastępując nimi oryginalne kolumny.
 
-    Dla każdej kolumny ``cecha`` tworzone są:
+    Tryb treningowy:
+        Jeśli progi=None, wyznacza je na podstawie df i y,
+        minimalizując log-loss regresji logistycznej w CV.
 
-    ``cecha_spadek = max(prog_spadek - cecha, 0)``
-        wartość rośnie, gdy cecha spada poniżej progu ``dolny_kwantyl``;
-
-    ``cecha_wzrost = max(cecha - prog_wzrost, 0)``
-        wartość rośnie, gdy cecha przekracza próg ``gorny_kwantyl``.
-
-    Jeśli ``progi`` nie zostaną podane, są wyznaczane z kwantyli danych w
-    ``df``. ``y`` służy do sprawdzenia zgodności obserwacji, ale nie jest
-    używany do wyznaczania progów. Funkcję należy więc najpierw wywołać na
-    zbiorze treningowym, a zapisane progi przekazać później dla walidacji
-    i testu.
-
-    Zwraca:
-        Kopię ramki z nowymi kolumnami oraz słownik progów.
+    Tryb transformacji:
+        Jeśli podano progi, tworzy cechy zawiasowe bez używania y.
     """
+
     if not isinstance(df, pd.DataFrame):
         raise TypeError("df musi być obiektem pandas.DataFrame.")
-    if not isinstance(y, pd.Series):
-        raise TypeError("y musi być obiektem pandas.Series.")
-    if len(df) != len(y):
-        raise ValueError("df i y muszą mieć tę samą liczbę obserwacji.")
-    if not 0 < dolny_kwantyl < gorny_kwantyl < 1:
-        raise ValueError(
-            "dolny_kwantyl i gorny_kwantyl muszą spełniać "
-            "0 < dolny_kwantyl < gorny_kwantyl < 1."
-        )
+
+    if kolumny_niemonotoniczne is None:
+        kolumny_niemonotoniczne = list(progi) if progi is not None else []
+
+    if not kolumny_niemonotoniczne:
+        raise ValueError("Nie wskazano kolumn niemonotonicznych.")
+
+    if progi is None:
+        if y is None:
+            raise ValueError(
+                "Do wyznaczenia progów wymagane jest y."
+            )
+        if not isinstance(y, pd.Series):
+            raise TypeError("y musi być obiektem pandas.Series.")
+        if len(df) != len(y):
+            raise ValueError("df i y muszą mieć tę samą liczbę obserwacji.")
+        if liczba_kandydatow < 2:
+            raise ValueError(
+                "liczba_kandydatow musi wynosić co najmniej 2."
+            )
 
     brakujace = sorted(set(kolumny_niemonotoniczne) - set(df.columns))
     if brakujace:
         raise KeyError(f"Brak kolumn w df: {brakujace}")
 
     wynik = df.copy()
-    ustalone_progi = progi
-    wyznaczone_progi: dict[str, dict[str, float]] = {}
+    wyznaczone_progi = {}
 
     for kolumna in kolumny_niemonotoniczne:
-        wartosci = pd.to_numeric(wynik[kolumna], errors="coerce")
-        if ustalone_progi is None:
-            prog_spadek = wartosci.quantile(dolny_kwantyl)
-            prog_wzrost = wartosci.quantile(gorny_kwantyl)
-        else:
-            if kolumna not in ustalone_progi:
-                raise KeyError(f"Brak progów dla kolumny '{kolumna}'.")
-            prog_spadek = ustalone_progi[kolumna]["prog_spadek"]
-            prog_wzrost = ustalone_progi[kolumna]["prog_wzrost"]
+        wartosci = pd.to_numeric(df[kolumna], errors="coerce")
 
-        if pd.isna(prog_spadek) or pd.isna(prog_wzrost):
-            raise ValueError(
-                f"Kolumna '{kolumna}' nie zawiera żadnych wartości liczbowych."
+        if progi is not None:
+            if kolumna not in progi:
+                raise KeyError(f"Brak progów dla kolumny '{kolumna}'.")
+
+            prog_spadek = progi[kolumna]["prog_spadek"]
+            prog_wzrost = progi[kolumna]["prog_wzrost"]
+
+        else:
+            x_array = wartosci.to_numpy(dtype=float)
+            y_array = pd.to_numeric(y, errors="coerce").to_numpy(
+                dtype=float
             )
+
+            maska = np.isfinite(x_array) & np.isfinite(y_array)
+            x = x_array[maska]
+            target = y_array[maska]
+
+            if not np.isin(target, [0, 1]).all():
+                raise ValueError("y musi być zmienną binarną (0/1).")
+
+            klasy, liczebnosci = np.unique(
+                target, return_counts=True
+            )
+
+            if len(klasy) != 2 or liczebnosci.min() < cv:
+                raise ValueError(
+                    f"Każda klasa musi mieć przynajmniej {cv} obserwacji."
+                )
+
+            kandydaci = np.unique(
+                np.quantile(
+                    x,
+                    np.linspace(0.1, 0.9, liczba_kandydatow)
+                )
+            )
+
+            if len(kandydaci) < 2:
+                raise ValueError(
+                    f"Za mało różnych wartości w '{kolumna}'."
+                )
+
+            najlepszy_wynik = np.inf
+            najlepsze_progi = None
+
+            kfold = StratifiedKFold(
+                n_splits=cv,
+                shuffle=True,
+                random_state=2137
+            )
+
+            for dolny in kandydaci:
+                for gorny in kandydaci:
+                    if dolny >= gorny:
+                        continue
+
+                    X = np.column_stack([
+                        np.maximum(dolny - x, 0),
+                        np.maximum(x - gorny, 0)
+                    ])
+
+                    wyniki = []
+
+                    for train_idx, valid_idx in kfold.split(X, target):
+                        model = LogisticRegression(max_iter=1000)
+                        model.fit(X[train_idx], target[train_idx])
+
+                        pred = model.predict_proba(
+                            X[valid_idx]
+                        )[:, 1]
+
+                        wyniki.append(
+                            log_loss(
+                                target[valid_idx],
+                                pred,
+                                labels=[0, 1]
+                            )
+                        )
+
+                    sredni_log_loss = np.mean(wyniki)
+
+                    if sredni_log_loss < najlepszy_wynik:
+                        najlepszy_wynik = sredni_log_loss
+                        najlepsze_progi = (dolny, gorny)
+
+            prog_spadek, prog_wzrost = najlepsze_progi
 
         wynik[f"{kolumna}_spadek"] = (
             prog_spadek - wartosci
         ).clip(lower=0)
+
         wynik[f"{kolumna}_wzrost"] = (
             wartosci - prog_wzrost
         ).clip(lower=0)
+
         wyznaczone_progi[kolumna] = {
             "prog_spadek": float(prog_spadek),
-            "prog_wzrost": float(prog_wzrost),
+            "prog_wzrost": float(prog_wzrost)
         }
 
+    wynik = wynik.drop(columns=kolumny_niemonotoniczne)
+
     return wynik, wyznaczone_progi
+
 def usuwanie_najbardziej_scorrelowanych(df, prog, numeryczne_kolumny=None, bezpieczne_kolumny=None):
     """
     Wylicza korelacje między kolumnami w zbiorze danych i usuwa te, które mają korelację większą niż podany próg. 

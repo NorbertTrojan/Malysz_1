@@ -8,7 +8,7 @@ from sklearn.model_selection import StratifiedKFold
 from IPython.display import display
 from sklearn.base import BaseEstimator, TransformerMixin, clone
 
-from wskazniki_kredytowe import oblicz_wskazniki
+from funkcje.wskazniki_kredytowe import oblicz_wskazniki
 
 def dodaj_cechy_zawiasowe(
     df: pd.DataFrame,

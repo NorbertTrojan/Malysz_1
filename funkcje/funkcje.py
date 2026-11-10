@@ -133,17 +133,13 @@ def dodaj_cechy_zawiasowe(
                         )[:, 1]
 
                         wyniki.append(
-                            log_loss(
-                                target[valid_idx],
-                                pred,
-                                labels=[0, 1]
-                            )
+                            roc_auc_score(target[valid_idx], pred)
                         )
 
-                    sredni_log_loss = np.mean(wyniki)
+                    auc = np.mean(wyniki)
 
-                    if sredni_log_loss < najlepszy_wynik:
-                        najlepszy_wynik = sredni_log_loss
+                    if auc < najlepszy_wynik:
+                        najlepszy_wynik = auc
                         najlepsze_progi = (dolny, gorny)
 
             prog_spadek, prog_wzrost = najlepsze_progi

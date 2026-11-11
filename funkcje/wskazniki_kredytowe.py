@@ -33,9 +33,6 @@ def _iloraz(licznik: pd.Series, mianownik: pd.Series) -> pd.Series:
 
 def oblicz_wskazniki(df: pd.DataFrame) -> pd.DataFrame:
     """Zwraca kopię ramki ``df`` z dodatkowymi wskaźnikami kredytowymi.
-
-    Funkcja nie odczytuje plików. Dane należy wcześniej wczytać do ramki,
-    np. przez ``pd.read_csv``. Oryginalna ramka nie jest modyfikowana.
     """
     if not isinstance(df, pd.DataFrame):
         raise TypeError(

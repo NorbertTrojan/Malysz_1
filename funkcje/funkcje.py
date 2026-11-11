@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pandas as pd
 import numpy as np
 
@@ -5,162 +7,12 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import StandardScaler
 from IPython.display import display
 from sklearn.base import BaseEstimator, TransformerMixin, clone
 
-from funkcje.wskazniki_kredytowe import oblicz_wskazniki
-
-def dodaj_cechy_zawiasowe(
-    df: pd.DataFrame,
-    y: pd.Series | None = None,
-    kolumny_niemonotoniczne: list[str] | None = None,
-    progi: dict[str, dict[str, float]] | None = None,
-    liczba_kandydatow: int = 15,
-    cv: int = 5
-    
-) -> tuple[pd.DataFrame, dict[str, dict[str, float]]]:
-    """Dodaje cechy zawiasowe, zastępując nimi oryginalne kolumny.
-
-    Tryb treningowy:
-        Jeśli progi=None, wyznacza je na podstawie df i y,
-        minimalizując log-loss regresji logistycznej w CV.
-
-    Tryb transformacji:
-        Jeśli podano progi, tworzy cechy zawiasowe bez używania y.
-    """
-
-    if not isinstance(df, pd.DataFrame):
-        raise TypeError("df musi być obiektem pandas.DataFrame.")
-
-    if kolumny_niemonotoniczne is None:
-        kolumny_niemonotoniczne = list(progi) if progi is not None else []
-
-    if not kolumny_niemonotoniczne:
-        raise ValueError("Nie wskazano kolumn niemonotonicznych.")
-
-    if progi is None:
-        if y is None:
-            raise ValueError(
-                "Do wyznaczenia progów wymagane jest y."
-            )
-        if not isinstance(y, pd.Series):
-            raise TypeError("y musi być obiektem pandas.Series.")
-        if len(df) != len(y):
-            raise ValueError("df i y muszą mieć tę samą liczbę obserwacji.")
-        if liczba_kandydatow < 2:
-            raise ValueError(
-                "liczba_kandydatow musi wynosić co najmniej 2."
-            )
-
-    brakujace = sorted(set(kolumny_niemonotoniczne) - set(df.columns))
-    if brakujace:
-        raise KeyError(f"Brak kolumn w df: {brakujace}")
-
-    wynik = df.copy()
-    wyznaczone_progi = {}
-
-    for kolumna in kolumny_niemonotoniczne:
-        wartosci = pd.to_numeric(df[kolumna], errors="coerce")
-
-        if progi is not None:
-            if kolumna not in progi:
-                raise KeyError(f"Brak progów dla kolumny '{kolumna}'.")
-
-            prog_spadek = progi[kolumna]["prog_spadek"]
-            prog_wzrost = progi[kolumna]["prog_wzrost"]
-
-        else:
-            x_array = wartosci.to_numpy(dtype=float)
-            y_array = pd.to_numeric(y, errors="coerce").to_numpy(
-                dtype=float
-            )
-
-            maska = np.isfinite(x_array) & np.isfinite(y_array)
-            x = x_array[maska]
-            target = y_array[maska]
-
-            if not np.isin(target, [0, 1]).all():
-                raise ValueError("y musi być zmienną binarną (0/1).")
-
-            klasy, liczebnosci = np.unique(
-                target, return_counts=True
-            )
-
-            if len(klasy) != 2 or liczebnosci.min() < cv:
-                raise ValueError(
-                    f"Każda klasa musi mieć przynajmniej {cv} obserwacji."
-                )
-
-            kandydaci = np.unique(
-                np.quantile(
-                    x,
-                    np.linspace(0.1, 0.9, liczba_kandydatow)
-                )
-            )
-
-            if len(kandydaci) < 2:
-                raise ValueError(
-                    f"Za mało różnych wartości w '{kolumna}'."
-                )
-
-            najlepszy_wynik = np.inf
-            najlepsze_progi = None
-
-            kfold = StratifiedKFold(
-                n_splits=cv,
-                shuffle=True,
-                random_state=2137
-            )
-
-            for dolny in kandydaci:
-                for gorny in kandydaci:
-                    if dolny >= gorny:
-                        continue
-
-                    X = np.column_stack([
-                        np.maximum(dolny - x, 0),
-                        np.maximum(x - gorny, 0)
-                    ])
-
-                    wyniki = []
-
-                    for train_idx, valid_idx in kfold.split(X, target):
-                        model = LogisticRegression(max_iter=1000)
-                        model.fit(X[train_idx], target[train_idx])
-
-                        pred = model.predict_proba(
-                            X[valid_idx]
-                        )[:, 1]
-
-                        wyniki.append(
-                            roc_auc_score(target[valid_idx], pred)
-                        )
-
-                    auc = np.mean(wyniki)
-
-                    if auc < najlepszy_wynik:
-                        najlepszy_wynik = auc
-                        najlepsze_progi = (dolny, gorny)
-
-            prog_spadek, prog_wzrost = najlepsze_progi
-
-        wynik[f"{kolumna}_spadek"] = (
-            prog_spadek - wartosci
-        ).clip(lower=0)
-
-        wynik[f"{kolumna}_wzrost"] = (
-            wartosci - prog_wzrost
-        ).clip(lower=0)
-
-        wyznaczone_progi[kolumna] = {
-            "prog_spadek": float(prog_spadek),
-            "prog_wzrost": float(prog_wzrost)
-        }
-
-    wynik = wynik.drop(columns=kolumny_niemonotoniczne)
 
 
-    return wynik, wyznaczone_progi
 
 def usuwanie_najbardziej_scorrelowanych(df, prog, numeryczne_kolumny=None, bezpieczne_kolumny=None, czy_wyswietlic=False):
     """
@@ -233,456 +85,230 @@ def usuwanie_najbardziej_scorrelowanych(df, prog, numeryczne_kolumny=None, bezpi
         print(f"Usunięto {len(do_usuniecia)} kolumn.")
     return df.drop(columns=list(do_usuniecia))
 
+
+
+
 def wykryj_niemonotoniczne(
-    df,
-    y,
-    liczba_kwantyli=10,
-    min_obserwacji=50,
-    min_zmiana_dr=0.05,
-    min_zmian_kierunku=1,
-    min_zmian_w_gore=0,
-    min_zmian_w_dol=0,
-    min_rozstep_dr=0.03,
-    czy_wyswietlic=False
-):
+    df: pd.DataFrame,
+    y: pd.Series,
+    liczba_kwantyli: int = 10,
+    liczba_kwantyli_z_rzedu: int = 2,
+    prog: float = 0.1,
+) -> tuple[list[str], list[list[float | str]]]:
+    """Wykrywa cechy o kształcie U lub odwróconego U.
 
-    """
-    Wykrywa numeryczne cechy o potencjalnie niemonotonicznej zależności
-    ze zmienną objaśnianą na podstawie współczynnika DR (default rate)
-    obliczanego w kolejnych decylach cechy.
+    Dla każdej cechy dopasowywany jest jeden model regresji logistycznej na
+    całej ramce danych. Następnie dla każdego kwantyla cechy liczony jest
+    iloraz ``DR / PD``, gdzie ``DR`` jest średnią wartością ``y``, a ``PD``
+    średnią predykcją modelu.
 
-    Dla każdej cechy numerycznej:
-    1. Dzieli obserwacje na decyle według wartości cechy.
-    2. Oblicza DR (średnią wartość zmiennej objaśnianej) w każdym decylu.
-    3. Analizuje zmiany DR pomiędzy sąsiednimi decylami.
-    4. Ignoruje zmiany DR mniejsze niż określony próg.
-    5. Sprawdza liczbę wzrostów, spadków i zmian kierunku DR.
-    6. Weryfikuje minimalną różnicę między maksymalnym a minimalnym DR.
-
-    Cecha zostaje oznaczona jako niemonotoniczna, jeśli jednocześnie
-    spełnia wszystkie określone kryteria restrykcyjności.
-
-    Parametry
-    ----------
-    df : pandas.DataFrame
-        Ramka danych zawierająca cechy objaśniające oraz zmienną objaśnianą.
-
-    y : pandas.Series lub array-like
-        Zmienna objaśniana, np. binarna 0/1.
-
-    liczba_kwantyli : int, default=10
-        Docelowa liczba kwantyli wykorzystywanych do analizy zależności.
-
-    min_obserwacji : int, default=50
-        Minimalna liczba obserwacji wymagana w każdym decylu.
-
-    min_zmiana_dr : float, default=0.05
-        Minimalna bezwzględna zmiana DR między sąsiednimi decylami,
-        aby została uznana za istotny wzrost lub spadek.
-
-    min_zmian_kierunku : int, default=1
-        Minimalna liczba zmian kierunku przebiegu DR.
-
-    min_zmian_w_gore : int, default=0
-        Minimalna liczba istotnych wzrostów DR między decylami.
-
-    min_zmian_w_dol : int, default=0
-        Minimalna liczba istotnych spadków DR między decylami.
-
-    min_rozstep_dr : float, default=0.03
-        Minimalna różnica między maksymalnym a minimalnym DR
-        w analizowanych decylach.
+    Cecha jest oznaczana tylko wtedy, gdy wymagany odchył od 1 występuje na
+    jednym końcu rozkładu, ale nie na obu. Progi w wyniku są wartościami
+    cechy rozdzielającymi kwantyle skrajne od pozostałej części rozkładu.
 
     Zwraca
     -------
-    list
-        Lista nazw cech oznaczonych jako potencjalnie niemonotoniczne.
-        Lista jest uporządkowana malejąco według liczby zmian kierunku
-        oraz rozstępu DR.
-
-    Uwagi
-    -----
-    - Analizowane są wyłącznie cechy numeryczne.
-    - Braki danych są usuwane osobno dla każdej analizowanej cechy.
-    - Cechy z niewystarczającą liczbą unikalnych wartości lub obserwacji
-      w decylach są pomijane.
+    tuple[list[str], list[list[float | str]]]
+        Pierwsza lista zawiera nazwy wykrytych cech. Druga zawiera elementy
+        w postaci ``[typ, prog_dolny, prog_gorny]``, w tej samej kolejności.
+        ``typ`` przyjmuje wartość ``"zwykle_u"`` albo ``"odwrocone_u"``.
     """
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("df musi być obiektem pandas.DataFrame.")
+    if df.empty:
+        raise ValueError("df nie może być pusta.")
+    if not df.columns.is_unique:
+        raise ValueError("Nazwy kolumn w df muszą być unikalne.")
+    if not all(pd.api.types.is_numeric_dtype(df[col]) for col in df.columns):
+        raise TypeError("Wszystkie kolumny df muszą być numeryczne.")
+    if not liczba_kwantyli % 1 == 0 or liczba_kwantyli < 2:
+        raise ValueError("liczba_kwantyli musi być całkowita i wynosić co najmniej 2.")
+    if (
+        not liczba_kwantyli_z_rzedu % 1 == 0
+        or liczba_kwantyli_z_rzedu < 1
+        or liczba_kwantyli_z_rzedu * 2 > liczba_kwantyli
+    ):
+        raise ValueError(
+            "liczba_kwantyli_z_rzedu musi być dodatnia i nie może "
+            "przekraczać połowy liczby kwantyli."
+        )
+    if not np.isfinite(prog) or prog < 0:
+        raise ValueError("prog musi być skończoną liczbą nieujemną.")
 
-    wyniki = []
-
-    # Wyrównanie indeksów
     y = pd.Series(y, index=df.index)
+    if len(y) != len(df):
+        raise ValueError("df i y muszą mieć tę samą liczbę obserwacji.")
+    y_array = pd.to_numeric(y, errors="coerce").to_numpy(dtype=float)
+    if not np.isfinite(y_array).all() or not np.isin(y_array, [0, 1]).all():
+        raise ValueError("y musi być zmienną binarną (0/1) bez braków danych.")
+    if np.unique(y_array).size != 2:
+        raise ValueError("y musi zawierać obie klasy: 0 i 1.")
 
-    for col in df.columns:
-        if not pd.api.types.is_numeric_dtype(df[col]):
-            continue
+    dane_modelowe = df.replace([np.inf, -np.inf], np.nan)
+    mediany = dane_modelowe.median()
+    if mediany.isna().any():
+        puste_kolumny = mediany[mediany.isna()].index.tolist()
+        raise ValueError(
+            "Nie można uzupełnić medianą kolumn całkowicie pustych: "
+            f"{puste_kolumny}."
+        )
+    x_array = dane_modelowe.fillna(mediany).to_numpy(dtype=float)
+    x_array = StandardScaler().fit_transform(x_array)
+    model = LogisticRegression(max_iter=5000, solver="lbfgs")
+    model.fit(x_array, y_array)
+    pd_array = model.predict_proba(x_array)[:, 1]
 
-        tmp = pd.DataFrame({
-            "x": df[col],
-            "y": y
-        }).dropna()
+    oznaczone_kolumny = []
+    informacje = []
+    gorna_granica = 1 + prog
+    dolna_granica = 1 - prog
 
-        if tmp["x"].nunique() < liczba_kwantyli:
+    for numer_kolumny, kolumna in enumerate(df.columns):
+        wartosci = df.iloc[:, numer_kolumny]
+        maska_obserwacji = np.isfinite(wartosci.to_numpy(dtype=float))
+        wartosci_do_analizy = wartosci.loc[maska_obserwacji]
+        if wartosci_do_analizy.nunique() < liczba_kwantyli:
             continue
 
         try:
-            tmp["decyl"] = pd.qcut(
-                tmp["x"],
-                liczba_kwantyli,
+            grupy, krawedzie = pd.qcut(
+                wartosci_do_analizy,
+                q=liczba_kwantyli,
                 labels=False,
-                duplicates="drop"
+                retbins=True,
+                duplicates="drop",
             )
-
-            diag = tmp.groupby("decyl").agg(
-                DR=("y", "mean"),
-                n=("y", "size")
-            )
-
-            if len(diag) < liczba_kwantyli:
-                continue
-
-            if diag["n"].min() < min_obserwacji:
-                continue
-
-            dr = diag["DR"].values
-            roznice = np.diff(dr)
-
-            kierunki = np.where(
-                roznice > min_zmiana_dr, 1,
-                np.where(roznice < -min_zmiana_dr, -1, 0)
-            )
-
-            kierunki = kierunki[kierunki != 0]
-
-            wzrosty = (kierunki == 1).sum()
-            spadki = (kierunki == -1).sum()
-
-            zmiany_kierunku = (
-                np.sum(kierunki[1:] != kierunki[:-1])
-                if len(kierunki) > 1 else 0
-            )
-
-            rozstep_dr = dr.max() - dr.min()
-
-            niemonotoniczna = (
-                wzrosty >= min_zmian_w_gore
-                and spadki >= min_zmian_w_dol
-                and zmiany_kierunku >= min_zmian_kierunku
-                and rozstep_dr >= min_rozstep_dr
-            )
-
-            wyniki.append({
-                "cecha": col,
-                "liczba_decyl": len(diag),
-                "min_n": diag["n"].min(),
-                "DR_min": dr.min(),
-                "DR_max": dr.max(),
-                "rozstep_DR": rozstep_dr,
-                "wzrosty": wzrosty,
-                "spadki": spadki,
-                "zmiany_kierunku": zmiany_kierunku,
-                "niemonotoniczna": niemonotoniczna
-            })
-
         except ValueError:
             continue
 
-    wyniki = pd.DataFrame(wyniki)
+        liczba_grup = len(krawedzie) - 1
+        if liczba_grup != liczba_kwantyli:
+            continue
 
-    if wyniki.empty:
-        if czy_wyswietlic:
-            print("Nie znaleziono cech spełniających warunki analizy.")
-        return []
-
-    wyniki_niemonotoniczne = wyniki[
-        wyniki["niemonotoniczna"]
-    ].sort_values(
-        ["zmiany_kierunku", "rozstep_DR"],
-        ascending=False
-    )
-    if czy_wyswietlic:
-        print(f"Liczba przeanalizowanych cech: {len(wyniki)}")
-        print(f"Liczba cech niemonotonicznych: {len(wyniki_niemonotoniczne)}")
-
-        display(wyniki_niemonotoniczne.round(4))
-
-    return wyniki_niemonotoniczne["cecha"].tolist()
-
-
-class PrzygotowanieCech(BaseEstimator, TransformerMixin):
-    def __init__(
-        self,
-        kolumny_do_pominiecia=None,
-        prog_korelacji=0.9,
-        prog_auc=0.6,
-        tylko_wskazniki=False,
-        prog_nan=0.5,
-        prog_zer=0.5,
-    ):
-        self.kolumny_do_pominiecia = kolumny_do_pominiecia
-        self.prog_korelacji = prog_korelacji
-        self.prog_auc = prog_auc
-        self.tylko_wskazniki = tylko_wskazniki
-        self.prog_nan = prog_nan
-        self.prog_zer = prog_zer
-
-    def _przygotuj_baze(self, X):
-        if not isinstance(X, pd.DataFrame):
-            raise TypeError("Dane wejściowe muszą być obiektem pandas.DataFrame.")
-
-        pomin = self.kolumny_do_pominiecia or []
-        brakujace = sorted(set(pomin) - set(X.columns))
-        if brakujace:
-            raise ValueError(f"Brak wymaganych kolumn do pominięcia: {brakujace}")
-
-        baza = X.drop(columns=pomin).copy()
-        kolumny_poczatkowe = set(baza.columns)
-
-        baza = oblicz_wskazniki(baza)
-
-        if self.tylko_wskazniki:
-            nowe_kolumny = [
-                kolumna for kolumna in baza.columns
-                if kolumna not in kolumny_poczatkowe
-            ]
-            baza = baza[nowe_kolumny]
-
-        return baza
-
-    @staticmethod
-    def _kolumny_numeryczne(X):
-        kolumny = X.select_dtypes(include=["float"]).columns.tolist()
-        if "wsk_liczba_dni_istnienia" in X.columns and "wsk_liczba_dni_istnienia" not in kolumny:
-            kolumny.append("wsk_liczba_dni_istnienia")
-        return kolumny
-
-    def _odrzuc_kolumny_niskiego_auc(self, X, y):
-        rows = []
-        for kolumna in X.columns:
-            maska = X[kolumna].notna()
-            if maska.sum() == 0 or y.loc[maska].nunique() < 2:
-                continue
-            auc = roc_auc_score(y.loc[maska], X.loc[maska, kolumna])
-            rows.append((kolumna, max(auc, 1 - auc), auc >= 0.5))
-
-        if not rows:
-            raise ValueError("Nie udało się policzyć AUC dla żadnej cechy.")
-
-        tabela = pd.DataFrame(rows, columns=["cecha", "auc", "zgodny_kierunek"])
-        do_usuniecia = tabela.loc[tabela["auc"] < self.prog_auc, "cecha"].tolist()
-        do_odwrocenia = tabela.loc[
-            (tabela["auc"] >= self.prog_auc) & tabela["zgodny_kierunek"], "cecha"
-        ].tolist()
-        return do_usuniecia, do_odwrocenia
-
-    def fit(self, X, y):
-        y = pd.Series(y, index=X.index if isinstance(X, pd.DataFrame) else None)
-        baza = self._przygotuj_baze(X)
-        self.kolumny_numeryczne_ = self._kolumny_numeryczne(baza)
-        if not self.kolumny_numeryczne_:
-            raise ValueError("Nie znaleziono cech numerycznych.")
-
-        numeryczne = baza[self.kolumny_numeryczne_].copy()
-        numeryczne = numeryczne.replace([np.inf, -np.inf], np.nan)
-
-        maska_nan = numeryczne.isna().mean() <= self.prog_nan
-        maska_zer = numeryczne.eq(0).mean() <= self.prog_zer
-        maska_jakosci = maska_nan & maska_zer
-
-        self.kolumny_zbyt_wielu_brakow_ = numeryczne.columns[~maska_jakosci].tolist()
-        numeryczne = numeryczne.loc[:, maska_jakosci]
-
-        po_korelacji = usuwanie_najbardziej_scorrelowanych(
-            numeryczne, prog=self.prog_korelacji
+        tabela = pd.DataFrame(
+            {
+                "grupa": grupy.to_numpy(),
+                "y": y_array[maska_obserwacji],
+                "pd": pd_array[maska_obserwacji],
+            }
+        ).groupby("grupa", sort=True)
+        dr = tabela["y"].mean().to_numpy()
+        pd_sr = tabela["pd"].mean().to_numpy()
+        stosunek = np.divide(
+            dr,
+            pd_sr,
+            out=np.full_like(dr, np.nan, dtype=float),
+            where=pd_sr != 0,
         )
-        self.kolumny_po_korelacji_ = po_korelacji.columns.tolist()
-        nie_monotoniczne = wykryj_niemonotoniczne(po_korelacji, y)
-        self.kolumny_niemonotoniczne_ = list(nie_monotoniczne)
+        if not np.isfinite(stosunek).all():
+            continue
 
-        if self.kolumny_niemonotoniczne_:
-            po_zawiasach, self.progi_ = dodaj_cechy_zawiasowe(
-                po_korelacji, y, self.kolumny_niemonotoniczne_
-            )
+        pierwsze = stosunek[:liczba_kwantyli_z_rzedu]
+        ostatnie = stosunek[-liczba_kwantyli_z_rzedu:]
+        wysoki_dol = np.all(pierwsze > gorna_granica)
+        wysoki_gora = np.all(ostatnie > gorna_granica)
+        niski_dol = np.all(pierwsze < dolna_granica)
+        niski_gora = np.all(ostatnie < dolna_granica)
+
+        if wysoki_dol ^ wysoki_gora:
+            typ = "zwykle_u"
+            lewy_skrajny = wysoki_dol
+            ekstremum = int(np.argmin(stosunek))
+            warunek = stosunek > gorna_granica
+        elif niski_dol ^ niski_gora:
+            typ = "odwrocone_u"
+            lewy_skrajny = niski_dol
+            ekstremum = int(np.argmax(stosunek))
+            warunek = stosunek < dolna_granica
         else:
-            po_zawiasach, self.progi_ = po_korelacji, {}
+            continue
 
-        self.kolumny_do_usuniecia_, self.kolumny_do_odwrocenia_ = (
-            self._odrzuc_kolumny_niskiego_auc(po_zawiasach, y)
+        if lewy_skrajny:
+            indeks = 0
+            while indeks + 1 < liczba_grup and warunek[indeks + 1]:
+                indeks += 1
+            prog_dolny = krawedzie[indeks + 1]
+            prog_gorny = krawedzie[min(ekstremum + 1, liczba_grup)]
+        else:
+            indeks = liczba_grup - 1
+            while indeks > 0 and warunek[indeks - 1]:
+                indeks -= 1
+            prog_dolny = krawedzie[max(ekstremum, 0)]
+            prog_gorny = krawedzie[indeks]
+
+        oznaczone_kolumny.append(kolumna)
+        informacje.append([typ, float(prog_dolny), float(prog_gorny)])
+
+    return oznaczone_kolumny, informacje
+
+
+def dodaj_cechy_zawiasowe(
+    df: pd.DataFrame,
+    dane_niemonotoniczne: tuple[list[str], list[list[float | str]]],
+) -> pd.DataFrame:
+    """Zastępuje wykryte cechy U dwiema cechami zawiasowymi.
+
+    ``dane_niemonotoniczne`` powinno być wynikiem funkcji
+    :func:`wykryj_niemonotoniczne`. Braki danych w przekształcanej kolumnie
+    pozostają brakami również w obu nowych kolumnach.
+    """
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("df musi być obiektem pandas.DataFrame.")
+    if not isinstance(dane_niemonotoniczne, (tuple, list)):
+        raise TypeError(
+            "dane_niemonotoniczne musi być krotką "
+            "(kolumny, informacje)."
         )
-        wynik = po_zawiasach.drop(columns=self.kolumny_do_usuniecia_)
-        wynik[self.kolumny_do_odwrocenia_] = -wynik[self.kolumny_do_odwrocenia_]
+    if len(dane_niemonotoniczne) != 2:
+        raise ValueError(
+            "dane_niemonotoniczne musi zawierać kolumny i informacje."
+        )
 
-        skosnosc = wynik.skew()
-        self.kolumny_do_log_ = [
-            kolumna for kolumna in wynik.columns
-            if skosnosc[kolumna] > 2 and wynik[kolumna].min() >= 0
-        ]
-        wynik[self.kolumny_do_log_] = np.log1p(wynik[self.kolumny_do_log_])
-        self.kolumny_wynikowe_ = wynik.columns.tolist()
-        return self
+    kolumny, informacje = dane_niemonotoniczne
+    if len(kolumny) != len(informacje):
+        raise ValueError(
+            "Liczba kolumn musi odpowiadać liczbie zestawów informacji."
+        )
+    if len(set(kolumny)) != len(kolumny):
+        raise ValueError("Kolumny w danych wejściowych muszą być unikalne.")
 
-    def transform(self, X):
-        baza = self._przygotuj_baze(X)
-        numeryczne = baza.reindex(columns=self.kolumny_numeryczne_)
-        numeryczne = numeryczne.replace([np.inf, -np.inf], np.nan)
-        numeryczne = numeryczne.drop(columns=self.kolumny_zbyt_wielu_brakow_)
-        numeryczne = numeryczne.reindex(columns=self.kolumny_po_korelacji_)
+    brakujace = sorted(set(kolumny) - set(df.columns))
+    if brakujace:
+        raise KeyError(f"Brak kolumn w df: {brakujace}")
 
-        if self.kolumny_niemonotoniczne_:
-            numeryczne = dodaj_cechy_zawiasowe(
-                numeryczne,
-                kolumny_niemonotoniczne=self.kolumny_niemonotoniczne_,
-                progi=self.progi_,
-            )[0]
-
-        numeryczne = numeryczne.drop(columns=self.kolumny_do_usuniecia_)
-        numeryczne[self.kolumny_do_odwrocenia_] = -numeryczne[self.kolumny_do_odwrocenia_]
-        numeryczne[self.kolumny_do_log_]=numeryczne[self.kolumny_do_log_].clip(lower=0)
-        numeryczne[self.kolumny_do_log_] = np.log1p(numeryczne[self.kolumny_do_log_])
-        return numeryczne.reindex(columns=self.kolumny_wynikowe_)
-
-
-
-class PrzygotowanieCech_xgb(BaseEstimator, TransformerMixin):
-    def __init__(
-        self,
-        kolumny_do_pominiecia=None,
-        prog_korelacji=0.9,
-        tylko_wskazniki=False,
-        prog_nan=0.5,
-        prog_zer=0.5,
-        uwzglednij_kategoryczne=True,
-    ):
-        self.kolumny_do_pominiecia = kolumny_do_pominiecia
-        self.prog_korelacji = prog_korelacji
-        self.tylko_wskazniki = tylko_wskazniki
-        self.prog_nan = prog_nan
-        self.prog_zer = prog_zer
-        self.uwzglednij_kategoryczne = uwzglednij_kategoryczne
-
-    def _przygotuj_baze(self, X):
-        if not isinstance(X, pd.DataFrame):
-            raise TypeError("Dane wejściowe muszą być obiektem pandas.DataFrame.")
-
-        pomin = self.kolumny_do_pominiecia or []
-        brakujace = sorted(set(pomin) - set(X.columns))
-
-        if brakujace:
+    wynik = df.copy()
+    for kolumna, informacja in zip(kolumny, informacje):
+        if not isinstance(informacja, (list, tuple)) or len(informacja) != 3:
             raise ValueError(
-                f"Brak wymaganych kolumn do pominięcia: {brakujace}"
+                f"Informacja dla kolumny '{kolumna}' musi mieć format "
+                "[typ, prog_dolny, prog_gorny]."
             )
 
-        baza = X.drop(columns=pomin).copy()
-        kolumny_poczatkowe = set(baza.columns)
-
-        baza = oblicz_wskazniki(baza)
-
-        if self.tylko_wskazniki:
-            nowe_kolumny = [
-                kolumna for kolumna in baza.columns
-                if kolumna not in kolumny_poczatkowe
-            ]
-            baza = baza[nowe_kolumny]
-
-        return baza
-
-    @staticmethod
-    def _kolumny_numeryczne(X):
-        kolumny = X.select_dtypes(include=["float"]).columns.tolist()
-
-        if (
-            "wsk_liczba_dni_istnienia" in X.columns
-            and "wsk_liczba_dni_istnienia" not in kolumny
-        ):
-            kolumny.append("wsk_liczba_dni_istnienia")
-
-        return kolumny
-
-    def fit(self, X, y=None):
-        baza = self._przygotuj_baze(X)
-
-        self.kolumny_numeryczne_ = self._kolumny_numeryczne(baza)
-
-        self.kolumny_kategoryczne_ = (
-            [
-                col for col in baza.columns
-                if col not in self.kolumny_numeryczne_
-            ]
-            if self.uwzglednij_kategoryczne
-            else []
-        )
-
-        self.kategorie_ = {
-            col: baza[col].dropna().unique().tolist()
-            for col in self.kolumny_kategoryczne_
-        }
-
-        numeryczne = baza[self.kolumny_numeryczne_].copy()
-        numeryczne = numeryczne.replace([np.inf, -np.inf], np.nan)
-
-        maska_nan = numeryczne.isna().mean() <= self.prog_nan
-        maska_zer = numeryczne.eq(0).mean() <= self.prog_zer
-        maska_jakosci = maska_nan & maska_zer
-
-        self.kolumny_zbyt_wielu_brakow_ = (
-            numeryczne.columns[~maska_jakosci].tolist()
-        )
-
-        numeryczne = numeryczne.loc[:, maska_jakosci]
-
-        if numeryczne.shape[1] > 0:
-            po_korelacji = usuwanie_najbardziej_scorrelowanych(
-                numeryczne,
-                prog=self.prog_korelacji
+        typ, prog_dolny, prog_gorny = informacja
+        if typ not in {"zwykle_u", "odwrocone_u"}:
+            raise ValueError(
+                f"Nieznany typ '{typ}' dla kolumny '{kolumna}'."
             )
-            self.kolumny_po_korelacji_ = po_korelacji.columns.tolist()
+        if not np.isfinite(prog_dolny) or not np.isfinite(prog_gorny):
+            raise ValueError(
+                f"Progi dla kolumny '{kolumna}' muszą być skończone."
+            )
+        if prog_dolny > prog_gorny:
+            raise ValueError(
+                f"Prog_dolny nie może być większy od prog_gorny "
+                f"dla kolumny '{kolumna}'."
+            )
+
+        dynamika = pd.to_numeric(wynik[kolumna], errors="coerce")
+        if typ == "zwykle_u":
+            spadek = (prog_dolny - dynamika).clip(lower=0)
+            wzrost = (dynamika - prog_gorny).clip(lower=0)
         else:
-            self.kolumny_po_korelacji_ = []
+            wzrost = (dynamika - prog_dolny).clip(lower=0)
+            spadek = (prog_gorny - dynamika).clip(lower=0)
 
-        self.kolumny_wynikowe_ = (
-            self.kolumny_po_korelacji_
-            + self.kolumny_kategoryczne_
-        )
+        wynik[f"{kolumna}_spadek"] = spadek
+        wynik[f"{kolumna}_wzrost"] = wzrost
+        wynik = wynik.drop(columns=kolumna)
 
-        if not self.kolumny_wynikowe_:
-            raise ValueError("Nie pozostały żadne cechy po filtrowaniu.")
-
-        return self
-
-    def transform(self, X):
-        baza = self._przygotuj_baze(X)
-
-        numeryczne = baza.reindex(
-            columns=self.kolumny_po_korelacji_
-        ).copy()
-
-        numeryczne = numeryczne.replace(
-            [np.inf, -np.inf],
-            np.nan
-        )
-
-        if not self.uwzglednij_kategoryczne:
-            return numeryczne
-
-        kategoryczne = pd.DataFrame(index=baza.index)
-
-        for col in self.kolumny_kategoryczne_:
-            wartosci = (
-                baza[col]
-                if col in baza.columns
-                else pd.Series(np.nan, index=baza.index)
-            )
-
-            kategoryczne[col] = pd.Categorical(
-                wartosci,
-                categories=self.kategorie_[col]
-            )
-
-        wynik = pd.concat(
-            [numeryczne, kategoryczne],
-            axis=1
-        )
-
-        return wynik.reindex(
-            columns=self.kolumny_wynikowe_
-        )
+    return wynik

@@ -8,8 +8,13 @@ from sklearn.model_selection import StratifiedKFold
 from IPython.display import display
 from sklearn.base import BaseEstimator, TransformerMixin, clone
 
-from funkcje import usuwanie_najbardziej_scorrelowanych, wykryj_niemonotoniczne, dodaj_cechy_zawiasowe
-from wskazniki_kredytowe import oblicz_wskazniki
+from .funkcje import (
+    usuwanie_najbardziej_scorrelowanych,
+    wykryj_niemonotoniczne,
+    dodaj_cechy_zawiasowe,
+)
+from .wskazniki_kredytowe import oblicz_wskazniki
+
 
 
 class PrzygotowanieCech(BaseEstimator, TransformerMixin):
@@ -21,7 +26,8 @@ class PrzygotowanieCech(BaseEstimator, TransformerMixin):
         tylko_wskazniki=False,
         prog_nan=0.5,
         prog_zer=0.5,
-        prog_monotonicznosci=0.1
+        prog_monotonicznosci=0.1,
+        liczba_kwantyli=10,
     ):
         self.kolumny_do_pominiecia = kolumny_do_pominiecia
         self.prog_korelacji = prog_korelacji
@@ -30,6 +36,7 @@ class PrzygotowanieCech(BaseEstimator, TransformerMixin):
         self.prog_nan = prog_nan
         self.prog_zer = prog_zer
         self.prog_monotonicznosci = prog_monotonicznosci
+        self.liczba_kwantyli = liczba_kwantyli
 
     def _przygotuj_baze(self, X):
         if not isinstance(X, pd.DataFrame):
@@ -101,7 +108,7 @@ class PrzygotowanieCech(BaseEstimator, TransformerMixin):
             numeryczne, prog=self.prog_korelacji
         )
         self.kolumny_po_korelacji_ = po_korelacji.columns.tolist()
-        nie_monotoniczne = wykryj_niemonotoniczne(po_korelacji, y, prog=self.prog_monotonicznosci)
+        nie_monotoniczne = wykryj_niemonotoniczne(po_korelacji, y, prog=self.prog_monotonicznosci, liczba_kwantyli=self.liczba_kwantyli)
         self.kolumny_niemonotoniczne_ = nie_monotoniczne
 
         if self.kolumny_niemonotoniczne_:

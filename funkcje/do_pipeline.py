@@ -15,7 +15,11 @@ from .funkcje import (
 )
 from .wskazniki_kredytowe import oblicz_wskazniki
 
-
+class LogisticRegressionUjemne(LogisticRegression):
+    def fit(self, X, y, sample_weight=None):
+        super().fit(X, y, sample_weight=sample_weight)
+        self.coef_[self.coef_ > 0] = 0
+        return self
 
 class PrzygotowanieCech(BaseEstimator, TransformerMixin):
     def __init__(
@@ -120,7 +124,7 @@ class PrzygotowanieCech(BaseEstimator, TransformerMixin):
             self._odrzuc_kolumny_niskiego_auc(po_zawiasach, y)
         )
         wynik = po_zawiasach.drop(columns=self.kolumny_do_usuniecia_)
-        #wynik[self.kolumny_do_odwrocenia_] = -wynik[self.kolumny_do_odwrocenia_]
+        
 
         skosnosc = wynik.skew()
         self.kolumny_do_log_ = [
@@ -128,6 +132,14 @@ class PrzygotowanieCech(BaseEstimator, TransformerMixin):
             if skosnosc[kolumna] > 2 and wynik[kolumna].min() >= 0
         ]
         wynik[self.kolumny_do_log_] = np.log1p(wynik[self.kolumny_do_log_])
+        wynik[self.kolumny_do_odwrocenia_] = -wynik[self.kolumny_do_odwrocenia_]
+
+        wynik = wynik.rename(columns={
+            kolumna: f"-{kolumna}"
+            for kolumna in self.kolumny_do_odwrocenia_
+        })
+
+
         self.kolumny_wynikowe_ = wynik.columns.tolist()
         return self
 
@@ -144,11 +156,17 @@ class PrzygotowanieCech(BaseEstimator, TransformerMixin):
             )
 
         numeryczne = numeryczne.drop(columns=self.kolumny_do_usuniecia_)
-        #numeryczne[self.kolumny_do_odwrocenia_] = -numeryczne[self.kolumny_do_odwrocenia_]
+        
         numeryczne[self.kolumny_do_log_]=numeryczne[self.kolumny_do_log_].clip(lower=0)
         numeryczne[self.kolumny_do_log_] = np.log1p(numeryczne[self.kolumny_do_log_])
-        return numeryczne.reindex(columns=self.kolumny_wynikowe_)
+        numeryczne[self.kolumny_do_odwrocenia_] = -numeryczne[self.kolumny_do_odwrocenia_]
 
+        numeryczne = numeryczne.rename(columns={
+            kolumna: f"-{kolumna}"
+            for kolumna in self.kolumny_do_odwrocenia_
+        })
+
+        return numeryczne.reindex(columns=self.kolumny_wynikowe_)
 
 
 class PrzygotowanieCech_xgb(BaseEstimator, TransformerMixin):

@@ -43,7 +43,7 @@ Klasyfikacja binarna - przewidywanie niewypłacalności.
 |---|---|---|
 | ROC AUC |0.8061 | 0.7806 |
 | Gini |0.6122 | 0.5613 |
-| Brier Score |0.3290  | 0.0721 |
+| Brier Score |0.0749 | 0.0762 |
 |PR-AUC|0.3290	|0.2815	|
 |KS|0.4829	|0.5396|
 |log-loss|	0.2482|0.2567|

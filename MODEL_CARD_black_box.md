@@ -14,7 +14,6 @@ Model ma wspierać ocenę ryzyka kredytowego i proces podejmowania decyzji dotyc
 Klasyfikacja binarna - przewidywanie niewypłacalności.
 
 ### Wykorzystane modele:
-* interpretowalny model bazowy - regresja logistyczna,
 * model typu black-box - XGBoost.
 
 ## 2. Opis danych
@@ -26,42 +25,41 @@ Klasyfikacja binarna - przewidywanie niewypłacalności.
 * podział danych
 
 ## 3. Budowa modelu
-* model bazowy: regresja logistyczna
 * model typu black-box: XGBoost
-* procedura trenowania: (sposób trenowania i dobór hiperparametrów)
-* miary oceny:
+* procedura trenowania: zbiór danych został podzielony na trzy części: treningową, walidacyjną i testową. Początkowo siatka hiperparametrów była zawężana trenując na zbiorze treningowym i oceniając na walidacyjnym. Aby uniknąć przeuczenia ostateczne hiperparametry zostały wybrane przy pomocy kroswalidacji z5 foldami na samym zbiorze treningowym.
+* miary oceny: AUC
 
 ## 4. Kalibracja
-* cel kalibracji: Dostosowanie prognozowanych wartości PD do docelowego prawdopodobieństwa niewypłacalności w portfelu, wynoszącego 4%.
-* metoda kalibracji:...
+* cel kalibracji: dostosowanie prognozowanych wartości PD do docelowego prawdopodobieństwa niewypłacalności w portfelu, wynoszącego 4%.
+* metoda kalibracji: kalibracja kształtu okazała się zbyteczna, więc jedynie została zastosowana kalibracja poziomu.
 * docelowa średnia PD: 4%
-* średnia prognozowana PD przed kalibracją:...
-* średnia prognozowana PD po kalibracji:...
+* średnia prognozowana PD przed kalibracją: 0.088
+* średnia prognozowana PD po kalibracji: 0.043
 * zaobserwowany odsetek niewypłacalności: (w zbiorze walidacyjnym/testowym)
 * ocena kalibracji:?
 
 ## 5. Jakość modelu
 | Miara | Zbiór walidacyjny | Zbiór testowy |
 |---|---|---|
-| ROC AUC | | - |
-| Gini | | 0 |
-| F1-score | | 0|
-| Precision | | 0 |
-| Recall | | 0 |
-| Brier Score |  | 0 |
+| ROC AUC | 0.8397| 0.7958 |
+| Gini |0.6794	 | 0.5916 |
+| Brier Score | 0.0667 | 0.0629 |
+|PR-AUC|0.4225|0.4888|
+|KS|0.5396|0.5029|
+|log-loss|0.2327|0.2333|
 
 
 
 ## 6. Interpretowalność i wyjaśnialność
 
 ### 6.1. Wyjaśnienia globalne
-- Zastosowane metody: [metody dla modelu interpretowalnego i black-box].
-- Najważniejsze zmienne wpływające na predykcje: [lista zmiennych].
+- Zastosowane metody: analiza SHAP.
+- Najważniejsze zmienne wpływające na predykcje: wsk_index_skr_zaw, wsk_index_nowe, Aktywa, wsk_zadluzenia.
 - Główne wnioski z analizy globalnej: [krótki opis].
 
 ### 6.2. Wyjaśnienia lokalne
-- Zastosowane metody: [metody dla obu modeli].
-- Analizowane przypadki: [krótki opis wybranych obserwacji].
+- Zastosowane metody: analiza SHAP.
+- Analizowane przypadki: obserwacje ze zbioru testowego znajdujące się tuż pod progiem przyznania kredytu.
 - Główne wnioski: [krótki opis].
 
 Szczegółowe wyniki, wykresy oraz eksperymenty dotyczące wierności i stabilności wyjaśnień przedstawiono w raporcie technicznym.
@@ -94,7 +92,7 @@ Szczegółowe wyniki, wykresy oraz eksperymenty dotyczące wierności i stabilno
 ### Działania w ramach monitorowania:
 * Analiza istotnych odchyleń średniej PD od docelowego poziomu 4%
 * Analiza pogorszenia jakości predykcji
-* Ponowna ocena kalibracji w przypadku zmiany zaoserwowanego odsetka niewypłacalności
+* Ponowna ocena kalibracji w przypadku zmiany zaobserwowanego odsetka niewypłacalności
 * Ponowne trenowanie lub kalibracja modelu w razie potrzeby
 
 ## 10. Przeznaczenie i ograniczenia stosowania

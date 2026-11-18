@@ -16,7 +16,7 @@ Klasyfikacja binarna - przewidywanie niewypłacalności.
 ### Wykorzystane modele:
 * interpretowalny model bazowy - regresja logistyczna,
 
-## 2. Opis danych
+## 2. Opis danych   
 * liczba zmiennych
 * liczba obserwacji
 * zmienna docelowa

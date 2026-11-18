@@ -10,15 +10,10 @@ prawdopodobieństwo niewypłacalności klienta (PD).
 - Python **3.14.5**
 - Pakiety z pliku [`requirements.txt`](requirements.txt)
 
-Instalacja zależności:
-
-```bash
-pip install -r requirements.txt
-```
 
 ## Zawartość projektu
 
-| Plik lub katalog | Opis |
+| Plik| Opis |
 |---|---|
 | [`zbior_1.csv`](zbior_1.csv) | Zbiór danych używany w analizie i modelach. |
 | [`ekspoloracja_danych.ipynb`](ekspoloracja_danych.ipynb) | Eksploracja danych, sprawdzanie braków i podstawowych zależności. |

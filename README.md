@@ -24,8 +24,8 @@ prawdopodobieństwo niewypłacalności klienta (PD).
 | [`funkcje/funkcje.py`](funkcje/funkcje.py) | Funkcje przygotowania i transformacji cech. |
 | [`funkcje/do_pipeline.py`](funkcje/do_pipeline.py) | Klasy i elementy pipeline dla modeli. |
 | [`funkcje/wskazniki_kredytowe.py`](funkcje/wskazniki_kredytowe.py) | Obliczanie wskaźników finansowych i kredytowych. |
-| [`MODEL_CARD_regresja_logistyczna.md`](MODEL_CARD_regresja_logistyczna.md) | Model card dla regresji logistycznej |
-| [`MODEL_CARD_black_box.md`](MODEL_CARD_black_box.md) | Model card dla modelu black-box |
+| [`MODEL_CARD_regresja_logistyczna_2.md`](MODEL_CARD_regresja_logistyczna_2.md) | Model card dla regresji logistycznej |
+
 
 Notebooki można wywoływać w dowolnej kolejności, nie zależą od siebie.
 
